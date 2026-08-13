@@ -262,10 +262,9 @@ let reviewSession = {
 
 function updateReviewInfo() {
   const words = loadWords();
-  const queue = loadReviewQueue();
   const reviewCount = parseInt(document.getElementById('review-count').value) || 20;
   document.getElementById('info-total').textContent = words.length;
-  const pending = Math.min(reviewCount, queue.length || words.length);
+  const pending = Math.min(reviewCount, words.length);
   document.getElementById('info-pending').textContent = pending;
 
   const setupBtn = document.getElementById('btn-start-review');
@@ -324,29 +323,30 @@ document.getElementById('btn-start-review').addEventListener('click', () => {
   const count = Math.min(parseInt(document.getElementById('review-count').value) || 20, words.length);
   const order = getSelectedOrder();
 
-  // Get words from review queue
-  let queue = loadReviewQueue();
-  if (queue.length === 0) {
-    // Rebuild queue from all words (shuffled for variety)
-    queue = shuffleArray(words.map(w => w.id));
-  }
+  // 去重：确保每个词只出现一次（防止 queue 历史数据残留导致重复）
+  const seen = new Set();
+  const uniqueWords = words.filter(w => {
+    if (!w.id || seen.has(w.id)) return false;
+    seen.add(w.id);
+    return true;
+  });
 
-  // Get review batch
-  const batchIds = queue.slice(0, count);
-  const batchWords = batchIds.map(id => words.find(w => w.id === id)).filter(Boolean);
+  // 按复习次数升序排序（复习次数少的优先），同复习次数的随机排序
+  // 这样每次复习都优先练生词/薄弱词，同分段内每次选的词也不完全一样
+  const sorted = uniqueWords
+    .map(w => ({ w, r: Math.random() }))
+    .sort((a, b) => {
+      const rc = (a.w.reviewCount || 0) - (b.w.reviewCount || 0);
+      if (rc !== 0) return rc;
+      return a.r - b.r;
+    })
+    .map(x => x.w);
 
-  // If batch is smaller than count (some queue items were deleted), fill with random words
-  if (batchWords.length < count) {
-    const usedIds = new Set(batchWords.map(w => w.id));
-    const remaining = words.filter(w => !usedIds.has(w.id));
-    while (batchWords.length < count && remaining.length > 0) {
-      const idx = Math.floor(Math.random() * remaining.length);
-      batchWords.push(remaining.splice(idx, 1)[0]);
-    }
-  }
+  // 取复习次数最少的 count 个词
+  const batch = sorted.slice(0, count);
 
-  // Shuffle the batch so each review session has a different order
-  const shuffled = shuffleArray(batchWords);
+  // 打乱呈现顺序，确保每次复习的题目顺序都不同
+  const shuffled = shuffleArray(batch);
 
   reviewSession = {
     words: shuffled,
@@ -464,34 +464,9 @@ function markWord(isKnown) {
 }
 
 function finishReview() {
-  // Update review queue: remove reviewed words, re-add based on result
-  let queue = loadReviewQueue();
-  const reviewedIds = reviewSession.queueIds;
+  // 选词逻辑已改为基于 reviewCount 排序，不再依赖 queue 做滚动重排
+  // 这里只更新每日复习统计 + 显示完成界面
   const words = loadWords();
-
-  // Remove reviewed from queue
-  queue = queue.filter(id => !reviewedIds.includes(id));
-
-  // Re-add: known words go to back, unknown words go to 1/3 position
-  reviewedIds.forEach(id => {
-    const word = words.find(w => w.id === id);
-    if (!word) return;
-    if (word.lastResult === 'unknown') {
-      // Insert at 1/3 position for sooner re-review
-      const insertPos = Math.max(1, Math.floor(queue.length / 3));
-      queue.splice(insertPos, 0, id);
-    } else {
-      // Known words go to the back
-      queue.push(id);
-    }
-  });
-
-  // If queue is empty, rebuild from all words (shuffled for variety)
-  if (queue.length === 0 && words.length > 0) {
-    queue = shuffleArray(words.map(w => w.id));
-  }
-
-  saveReviewQueue(queue);
 
   // Update daily stats
   const stats = loadReviewStats();
