@@ -846,6 +846,31 @@ document.getElementById('btn-import').addEventListener('click', () => {
   document.getElementById('import-file').click();
 });
 
+// Merge daily review stats from another device's backup (same day => numbers add up, items deduped)
+function mergeReviewStats(srcStats, dstStats) {
+  Object.keys(srcStats || {}).forEach(day => {
+    const s = srcStats[day] || {};
+    if (!dstStats[day]) dstStats[day] = { reviewed: 0, known: 0, unknown: 0, added: 0, items: [] };
+    const d = dstStats[day];
+    d.reviewed = (d.reviewed || 0) + (s.reviewed || 0);
+    d.known = (d.known || 0) + (s.known || 0);
+    d.unknown = (d.unknown || 0) + (s.unknown || 0);
+    d.added = (d.added || 0) + (s.added || 0);
+    if (s.items && s.items.length) {
+      if (!Array.isArray(d.items)) d.items = [];
+      const seen = new Set(d.items.map(it => it.id || `${it.english}|${it.chinese}`));
+      s.items.forEach(it => {
+        const key = it.id || `${it.english}|${it.chinese}`;
+        if (!seen.has(key)) {
+          d.items.push(it);
+          seen.add(key);
+        }
+      });
+    }
+  });
+  return dstStats;
+}
+
 document.getElementById('import-file').addEventListener('change', (e) => {
   const file = e.target.files[0];
   if (!file) return;
@@ -858,36 +883,60 @@ document.getElementById('import-file').addEventListener('change', (e) => {
         showToast('文件格式不正确');
         return;
       }
-      if (confirm(`将导入 ${data.words.length} 个词组，是否合并到当前词库？\n（点击"取消"将替换当前词库）`)) {
-        // Merge mode
+      if (confirm(`将导入 ${data.words.length} 个词组和全部学习记录，是否合并到当前数据？\n（点击"取消"将替换当前全部数据）`)) {
+        // Merge mode: merge words (dedupe by English, accumulate review counts) + merge review stats
         const existing = loadWords();
         const existingEng = new Set(existing.map(w => w.english.toLowerCase()));
         let added = 0;
+        let mergedStats = 0;
         data.words.forEach(w => {
-          if (!existingEng.has(w.english.toLowerCase())) {
+          const lower = (w.english || '').toLowerCase();
+          if (!lower) return;
+          if (existingEng.has(lower)) {
+            // Word already exists: accumulate review stats from the other device
+            const ex = existing.find(x => x.english.toLowerCase() === lower);
+            if (w.reviewCount > 0) {
+              ex.reviewCount = (ex.reviewCount || 0) + (w.reviewCount || 0);
+              ex.correctCount = (ex.correctCount || 0) + (w.correctCount || 0);
+              if (w.lastReviewed && (!ex.lastReviewed || new Date(w.lastReviewed) > new Date(ex.lastReviewed))) {
+                ex.lastReviewed = w.lastReviewed;
+              }
+              mergedStats++;
+            }
+          } else {
             existing.push({ ...w, id: genId() });
+            existingEng.add(lower);
             added++;
           }
         });
         saveWords(existing);
+        // Merge review queue (add only new words)
         if (data.reviewQueue) {
           const queue = loadReviewQueue();
           const newIds = existing.slice(-added).map(w => w.id);
           queue.push(...newIds);
           saveReviewQueue(queue);
         }
-        showToast(`合并完成，新增 ${added} 个词组`);
+        // Merge daily learning records (the key fix: stats now accumulate across devices)
+        if (data.reviewStats) {
+          const stats = mergeReviewStats(data.reviewStats, loadReviewStats());
+          saveReviewStats(stats);
+        }
+        const msg = [`新增 ${added} 个词组`];
+        if (mergedStats > 0) msg.push(`累计 ${mergedStats} 个词的复习次数`);
+        showToast(`合并完成：${msg.join('，')}`);
       } else {
         // Replace mode
         saveWords(data.words);
         if (data.reviewQueue) saveReviewQueue(data.reviewQueue);
         if (data.reviewStats) saveReviewStats(data.reviewStats);
         if (data.settings) saveSettings(data.settings);
-        showToast('词库已替换');
+        showToast('数据已替换');
       }
       updateStats();
       updateSettingsUI();
       renderWordList();
+      renderHistory();
     } catch (err) {
       showToast('导入失败：文件格式错误');
     }
