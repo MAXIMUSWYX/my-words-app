@@ -18,6 +18,7 @@
         <button class="tab active" data-tab="add">添加词组</button>
         <button class="tab" data-tab="review">复习</button>
         <button class="tab" data-tab="list">词库</button>
+        <button class="tab" data-tab="history">记录</button>
         <button class="tab" data-tab="settings">设置</button>
       </nav>
     </header>
@@ -176,6 +177,32 @@
           <span class="empty-icon">📝</span>
           <p>词库还是空的，去添加一些词组吧！</p>
         </div>
+      </div>
+    </section>
+
+    <!-- History Tab -->
+    <section class="tab-content" id="tab-history">
+      <div class="card">
+        <h2>🗓️ 学习记录</h2>
+        <div class="stats-row">
+          <div class="stat-item">
+            <span class="stat-number" id="hist-days">0</span>
+            <span class="stat-label">学习天数</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-number" id="hist-reviewed">0</span>
+            <span class="stat-label">累计复习词组</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-number" id="hist-added">0</span>
+            <span class="stat-label">累计新增词组</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>📅 每日明细</h3>
+        <div class="history-list" id="history-list"></div>
       </div>
     </section>
 

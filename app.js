@@ -78,6 +78,7 @@ document.querySelectorAll('.tab').forEach(tab => {
     tab.classList.add('active');
     document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
     if (tab.dataset.tab === 'list') renderWordList();
+    if (tab.dataset.tab === 'history') renderHistory();
     if (tab.dataset.tab === 'review') updateReviewInfo();
     if (tab.dataset.tab === 'add') updateStats();
     if (tab.dataset.tab === 'settings') updateSettingsUI();
@@ -211,6 +212,14 @@ document.getElementById('btn-add').addEventListener('click', () => {
   });
 
   saveWords(words);
+
+  // Record daily added count
+  if (added > 0) {
+    const stats = loadReviewStats();
+    if (!stats[today]) stats[today] = { reviewed: 0, known: 0, unknown: 0, added: 0, items: [] };
+    stats[today].added = (stats[today].added || 0) + added;
+    saveReviewStats(stats);
+  }
 
   // Add new words to review queue
   const queue = loadReviewQueue();
@@ -372,12 +381,18 @@ function showCurrentCard() {
   }
 
   const word = reviewSession.words[reviewSession.currentIndex];
-  const isFlipped = reviewSession.isFlipped;
 
-  // Reset flip state
-  reviewSession.isFlipped = false;
+  // 无动画地瞬间回到正面，再填入新词组。
+  // 如果带 0.6s 翻转动画，转回正面的过程中背面会先展示新词组的答案，导致用户提前看到答案。
   const flashcard = document.getElementById('flashcard');
-  flashcard.classList.remove('flipped');
+  const inner = flashcard.querySelector('.flashcard-inner');
+  if (inner) {
+    inner.style.transition = 'none';
+    flashcard.classList.remove('flipped');
+    void flashcard.offsetWidth; // 强制 reflow，让重置立即生效
+    inner.style.transition = '';
+  }
+  reviewSession.isFlipped = false;
 
   // Set card content based on order
   if (reviewSession.order === 'english-first') {
@@ -456,6 +471,7 @@ function markWord(isKnown) {
 
   // Record the result of the current card
   reviewSession.lastResult = isKnown;
+  word.lastResult = isKnown ? 'known' : 'unknown';
 
   // Show "next" button, keep the answer visible
   document.getElementById('btn-flip').style.display = 'none';
@@ -471,10 +487,20 @@ function finishReview() {
   // Update daily stats
   const stats = loadReviewStats();
   const today = todayKey();
-  if (!stats[today]) stats[today] = { reviewed: 0, known: 0, unknown: 0 };
+  if (!stats[today]) stats[today] = { reviewed: 0, known: 0, unknown: 0, added: 0, items: [] };
   stats[today].reviewed += reviewSession.words.length;
   stats[today].known += reviewSession.knownCount;
   stats[today].unknown += reviewSession.unknownCount;
+  if (!stats[today].items) stats[today].items = [];
+  // Record each reviewed phrase with its result
+  reviewSession.words.forEach(w => {
+    stats[today].items.push({
+      id: w.id,
+      english: w.english,
+      chinese: w.chinese,
+      result: w.lastResult || 'unknown',
+    });
+  });
   saveReviewStats(stats);
 
   // Show completion screen
@@ -628,6 +654,90 @@ function deleteWord(id) {
 
 document.getElementById('search-input').addEventListener('input', renderWordList);
 document.getElementById('sort-select').addEventListener('change', renderWordList);
+
+// ===== History Tab =====
+const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
+
+function formatDateKey(key) {
+  const parts = key.split('-').map(Number);
+  const date = new Date(parts[0], parts[1] - 1, parts[2]);
+  return `${parts[1]}月${parts[2]}日 星期${WEEKDAYS[date.getDay()]}`;
+}
+
+function renderHistory() {
+  const stats = loadReviewStats();
+  const days = Object.keys(stats).sort().reverse();
+
+  // Totals: count only days with actual activity (reviewed or added)
+  let activeDays = 0, totalReviewed = 0, totalAdded = 0;
+  days.forEach(k => {
+    const s = stats[k];
+    if ((s.reviewed || 0) > 0 || (s.added || 0) > 0) activeDays++;
+    totalReviewed += s.reviewed || 0;
+    totalAdded += s.added || 0;
+  });
+
+  document.getElementById('hist-days').textContent = activeDays;
+  document.getElementById('hist-reviewed').textContent = totalReviewed;
+  document.getElementById('hist-added').textContent = totalAdded;
+
+  const listEl = document.getElementById('history-list');
+  if (days.length === 0) {
+    listEl.innerHTML = `
+      <div class="empty-state">
+        <span class="empty-icon">🗓️</span>
+        <p>还没有学习记录，去添加或复习一些词组吧！</p>
+      </div>`;
+    return;
+  }
+
+  listEl.innerHTML = days.map(key => {
+    const s = stats[key];
+    const reviewed = s.reviewed || 0;
+    const known = s.known || 0;
+    const unknown = s.unknown || 0;
+    const added = s.added || 0;
+    const items = s.items || [];
+
+    // Only show days with actual activity
+    if (reviewed === 0 && added === 0) return '';
+
+    const itemsHtml = items.length > 0 ? `
+      <div class="hist-items" style="display:none">
+        ${items.map(it => `
+          <div class="hist-item">
+            <span class="hist-item-text">${escapeHtml(it.english)}<span class="hist-item-sep">→</span>${escapeHtml(it.chinese)}</span>
+            <span class="hist-item-badge ${it.result === 'known' ? 'badge-known' : 'badge-unknown'}">${it.result === 'known' ? '认识' : '不认识'}</span>
+          </div>`).join('')}
+      </div>` : '';
+
+    const badges = [];
+    if (reviewed > 0) badges.push(`复习 <b>${reviewed}</b> 个`);
+    if (added > 0) badges.push(`新增 <b>${added}</b> 个`);
+    if (known > 0) badges.push(`<span class="hist-known">认识 ${known}</span>`);
+    if (unknown > 0) badges.push(`<span class="hist-unknown">不认识 ${unknown}</span>`);
+
+    return `
+      <div class="hist-day">
+        <div class="hist-day-head">
+          <span class="hist-date">${formatDateKey(key)}</span>
+          <span class="hist-badges">${badges.join(' · ')}</span>
+          ${items.length > 0 ? `<button class="btn-icon hist-toggle" title="展开详情">▾</button>` : ''}
+        </div>
+        ${itemsHtml}
+      </div>`;
+  }).join('');
+
+  // Toggle day details
+  listEl.querySelectorAll('.hist-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const items = btn.closest('.hist-day').querySelector('.hist-items');
+      const expanded = items.style.display !== 'none';
+      items.style.display = expanded ? 'none' : 'block';
+      btn.textContent = expanded ? '▾' : '▴';
+    });
+  });
+}
 
 // ===== Settings Tab =====
 function updateSettingsUI() {
