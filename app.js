@@ -388,9 +388,11 @@ function showCurrentCard() {
   const inner = flashcard.querySelector('.flashcard-inner');
   if (inner) {
     inner.style.transition = 'none';
+    inner.style.transform = 'rotateY(0deg)';
     flashcard.classList.remove('flipped');
-    void flashcard.offsetWidth; // 强制 reflow，让重置立即生效
+    void inner.offsetWidth; // 强制 inner reflow，让无 transition 的 transform 立即生效
     inner.style.transition = '';
+    inner.style.transform = '';
   }
   reviewSession.isFlipped = false;
 
