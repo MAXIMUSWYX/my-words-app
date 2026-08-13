@@ -918,12 +918,17 @@ document.getElementById('import-file').addEventListener('change', (e) => {
           saveReviewQueue(queue);
         }
         // Merge daily learning records (the key fix: stats now accumulate across devices)
-        if (data.reviewStats) {
+        let mergedReviewed = 0;
+        if (data.reviewStats && Object.keys(data.reviewStats).length > 0) {
           const stats = mergeReviewStats(data.reviewStats, loadReviewStats());
           saveReviewStats(stats);
+          mergedReviewed = Object.values(stats).reduce((sum, d) => sum + (d.reviewed || 0), 0);
+        } else if (!data.reviewStats) {
+          showToast('⚠️ 该备份文件不包含学习记录（可能是旧版本导出的），请用最新版重新导出');
         }
         const msg = [`新增 ${added} 个词组`];
         if (mergedStats > 0) msg.push(`累计 ${mergedStats} 个词的复习次数`);
+        if (data.reviewStats && Object.keys(data.reviewStats).length > 0) msg.push(`学习记录累计复习 ${mergedReviewed} 次`);
         showToast(`合并完成：${msg.join('，')}`);
       } else {
         // Replace mode
