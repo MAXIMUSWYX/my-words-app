@@ -1,3 +1,14 @@
+// ===== Utils =====
+// Fisher-Yates shuffle — returns a new array, does not mutate input
+function shuffleArray(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
 // ===== State Management =====
 const STORAGE_KEYS = {
   WORDS: 'vocab_words',
@@ -316,8 +327,8 @@ document.getElementById('btn-start-review').addEventListener('click', () => {
   // Get words from review queue
   let queue = loadReviewQueue();
   if (queue.length === 0) {
-    // Rebuild queue from all words
-    queue = words.map(w => w.id);
+    // Rebuild queue from all words (shuffled for variety)
+    queue = shuffleArray(words.map(w => w.id));
   }
 
   // Get review batch
@@ -334,14 +345,17 @@ document.getElementById('btn-start-review').addEventListener('click', () => {
     }
   }
 
+  // Shuffle the batch so each review session has a different order
+  const shuffled = shuffleArray(batchWords);
+
   reviewSession = {
-    words: batchWords,
+    words: shuffled,
     currentIndex: 0,
     knownCount: 0,
     unknownCount: 0,
     isFlipped: false,
     order: order,
-    queueIds: batchIds,
+    queueIds: shuffled.map(w => w.id),
   };
 
   document.getElementById('review-setup').style.display = 'none';
@@ -472,9 +486,9 @@ function finishReview() {
     }
   });
 
-  // If queue is empty, rebuild from all words
+  // If queue is empty, rebuild from all words (shuffled for variety)
   if (queue.length === 0 && words.length > 0) {
-    queue = words.map(w => w.id);
+    queue = shuffleArray(words.map(w => w.id));
   }
 
   saveReviewQueue(queue);
