@@ -557,6 +557,12 @@ document.addEventListener('keydown', (e) => {
 });
 
 // ===== Word List Tab =====
+function formatAddedDate(isoString) {
+  const d = new Date(isoString);
+  if (isNaN(d.getTime())) return '';
+  return `${d.getMonth() + 1}月${d.getDate()}日添加`;
+}
+
 function renderWordList() {
   const words = loadWords();
   const search = document.getElementById('search-input').value.toLowerCase().trim();
@@ -628,12 +634,15 @@ function renderWordList() {
       ? `<span class="word-badge">×${w.reviewCount}</span>`
       : '';
 
+    const addedDate = w.createdAt ? formatAddedDate(w.createdAt) : '';
+
     return `
       <div class="word-item" data-id="${w.id}">
         <span class="word-eng">${escapeHtml(w.english)}</span>
         <span class="word-arrow">→</span>
         <span class="word-chn">${escapeHtml(w.chinese)}</span>
         <div class="word-stats">${badge}${reviewBadge}</div>
+        <span class="word-date">${addedDate}</span>
         <button class="btn-delete" data-id="${w.id}" title="删除">✕</button>
       </div>
     `;
@@ -694,6 +703,7 @@ function renderHistory() {
   document.getElementById('hist-added').textContent = totalAdded;
 
   const listEl = document.getElementById('history-list');
+  const allWords = loadWords();
   if (days.length === 0) {
     listEl.innerHTML = `
       <div class="empty-state">
@@ -714,13 +724,29 @@ function renderHistory() {
     // Only show days with actual activity
     if (reviewed === 0 && added === 0) return '';
 
-    const itemsHtml = items.length > 0 ? `
+    // Words added on this day (addedDate stored at add time; fallback to createdAt UTC date)
+    const addedItems = allWords.filter(w => (w.addedDate || ((w.createdAt || '').slice(0, 10))) === key);
+
+    const reviewItemsHtml = items.length > 0 ? `
+      <div class="hist-section">📝 复习 ${items.length} 个</div>
+      ${items.map(it => `
+        <div class="hist-item">
+          <span class="hist-item-text">${escapeHtml(it.english)}<span class="hist-item-sep">→</span>${escapeHtml(it.chinese)}</span>
+          <span class="hist-item-badge ${it.result === 'known' ? 'badge-known' : 'badge-unknown'}">${it.result === 'known' ? '认识' : '不认识'}</span>
+        </div>`).join('')}` : '';
+
+    const addedItemsHtml = addedItems.length > 0 ? `
+      <div class="hist-section">📥 当天新增 ${addedItems.length} 个</div>
+      ${addedItems.map(w => `
+        <div class="hist-item">
+          <span class="hist-item-text">${escapeHtml(w.english)}<span class="hist-item-sep">→</span>${escapeHtml(w.chinese)}</span>
+          <span class="hist-item-badge badge-added">新增</span>
+        </div>`).join('')}` : '';
+
+    const itemsHtml = (reviewItemsHtml || addedItemsHtml) ? `
       <div class="hist-items" style="display:none">
-        ${items.map(it => `
-          <div class="hist-item">
-            <span class="hist-item-text">${escapeHtml(it.english)}<span class="hist-item-sep">→</span>${escapeHtml(it.chinese)}</span>
-            <span class="hist-item-badge ${it.result === 'known' ? 'badge-known' : 'badge-unknown'}">${it.result === 'known' ? '认识' : '不认识'}</span>
-          </div>`).join('')}
+        ${reviewItemsHtml}
+        ${addedItemsHtml}
       </div>` : '';
 
     const badges = [];
@@ -734,7 +760,7 @@ function renderHistory() {
         <div class="hist-day-head">
           <span class="hist-date">${formatDateKey(key)}</span>
           <span class="hist-badges">${badges.join(' · ')}</span>
-          ${items.length > 0 ? `<button class="btn-icon hist-toggle" title="展开详情">▾</button>` : ''}
+          ${(items.length > 0 || addedItems.length > 0) ? `<button class="btn-icon hist-toggle" title="展开详情">▾</button>` : ''}
         </div>
         ${itemsHtml}
       </div>`;

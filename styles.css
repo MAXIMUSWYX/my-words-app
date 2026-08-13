@@ -587,6 +587,13 @@ textarea:focus {
   flex-shrink: 0;
 }
 
+.word-item .word-date {
+  font-size: 11px;
+  color: var(--text-light);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 .word-item .word-badge {
   font-size: 11px;
   padding: 2px 8px;
@@ -817,6 +824,17 @@ textarea:focus {
 
 .badge-known { background: var(--success-light); color: var(--success); }
 .badge-unknown { background: var(--danger-light); color: var(--danger); }
+.badge-added { background: var(--primary-light); color: var(--primary); }
+
+.hist-section {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding: 8px 4px 4px;
+  border-top: 1px solid var(--border-light);
+  margin-top: 4px;
+}
+.hist-section:first-child { border-top: none; margin-top: 0; }
 
 /* ===== Responsive ===== */
 @media (max-width: 600px) {
