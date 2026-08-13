@@ -587,6 +587,16 @@ function renderWordList() {
 
   const listEl = document.getElementById('word-list');
   const emptyEl = document.getElementById('list-empty');
+  const countEl = document.getElementById('list-count');
+
+  // Update count label
+  if (countEl) {
+    if (search) {
+      countEl.textContent = `找到 ${filtered.length} 个 / 共 ${words.length} 个词组`;
+    } else {
+      countEl.textContent = `共 ${words.length} 个词组`;
+    }
+  }
 
   if (filtered.length === 0) {
     listEl.innerHTML = '';

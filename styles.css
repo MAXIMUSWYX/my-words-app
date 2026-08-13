@@ -506,6 +506,18 @@ textarea:focus {
   gap: 12px;
 }
 
+.list-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.list-count {
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
 .list-controls {
   display: flex;
   gap: 8px;
