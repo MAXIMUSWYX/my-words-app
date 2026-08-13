@@ -78,6 +78,25 @@ function parseLine(line) {
   line = line.trim();
   if (!line) return null;
 
+  // Format: English（Chinese）— answer inside full-width parentheses
+  const fwIdx = line.lastIndexOf('（');
+  const fwEnd = line.lastIndexOf('）');
+  if (fwIdx > 0 && fwEnd > fwIdx) {
+    const eng = line.substring(0, fwIdx).trim();
+    const chn = line.substring(fwIdx + 1, fwEnd).trim();
+    if (eng && chn) return { english: eng, chinese: chn };
+  }
+
+  // Format: English (Chinese) — answer inside half-width parentheses containing Chinese
+  const hwMatch = line.match(/\(([^)]+)\)\s*$/);
+  if (hwMatch) {
+    const inner = hwMatch[1].trim();
+    if (inner && /[^\x00-\x7F]/.test(inner)) {
+      const eng = line.substring(0, line.lastIndexOf('(')).trim();
+      if (eng) return { english: eng, chinese: inner };
+    }
+  }
+
   // Known delimiters (try longer ones first to avoid partial matches)
   const delimiters = [' - ', ' – ', ' — ', ' — ', ' = ', ': ', '：', '\t', ' | '];
   for (const delim of delimiters) {
@@ -149,7 +168,7 @@ document.getElementById('btn-preview').addEventListener('click', () => {
 
 document.getElementById('btn-add').addEventListener('click', () => {
   const text = inputArea.value.trim();
-  if (!text) { showToast('请先输入词汇'); return; }
+  if (!text) { showToast('请先输入词组'); return; }
 
   const { results } = parseInput(text);
   if (results.length === 0) { showToast('未识别到有效词组'); return; }
@@ -193,7 +212,7 @@ document.getElementById('btn-add').addEventListener('click', () => {
   previewData = [];
 
   if (duplicates > 0) {
-    showToast(`已添加 ${added} 个词组，跳过 ${duplicates} 个重复词`);
+    showToast(`已添加 ${added} 个词组，跳过 ${duplicates} 个重复词组`);
   } else {
     showToast(`成功添加 ${added} 个词组！`);
   }
@@ -241,7 +260,7 @@ function updateReviewInfo() {
   const setupBtn = document.getElementById('btn-start-review');
   if (words.length === 0) {
     setupBtn.disabled = true;
-    setupBtn.textContent = '词库为空，请先添加词汇';
+    setupBtn.textContent = '词库为空，请先添加词组';
     setupBtn.style.opacity = '0.5';
   } else {
     setupBtn.disabled = false;
@@ -365,9 +384,10 @@ function showCurrentCard() {
   document.getElementById('progress-text').textContent =
     `${reviewSession.currentIndex + 1} / ${reviewSession.words.length}`;
 
-  // Reset buttons
+  // Reset buttons: show flip + result buttons, hide next button
   document.getElementById('btn-flip').style.display = 'block';
-  document.getElementById('result-buttons').style.display = 'none';
+  document.getElementById('result-buttons').style.display = 'flex';
+  document.getElementById('btn-next').style.display = 'none';
 }
 
 // Flip card
@@ -381,7 +401,6 @@ function flipCard() {
 
   if (reviewSession.isFlipped) {
     document.getElementById('btn-flip').style.display = 'none';
-    document.getElementById('result-buttons').style.display = 'flex';
   }
 }
 
@@ -389,9 +408,22 @@ function flipCard() {
 document.getElementById('btn-known').addEventListener('click', () => markWord(true));
 document.getElementById('btn-unknown').addEventListener('click', () => markWord(false));
 
+// Next button
+document.getElementById('btn-next').addEventListener('click', () => {
+  reviewSession.currentIndex++;
+  showCurrentCard();
+});
+
 function markWord(isKnown) {
   const word = reviewSession.words[reviewSession.currentIndex];
   if (!word) return;
+
+  // Always show the answer when marking
+  if (!reviewSession.isFlipped) {
+    const flashcard = document.getElementById('flashcard');
+    flashcard.classList.add('flipped');
+    reviewSession.isFlipped = true;
+  }
 
   // Update word stats
   const words = loadWords();
@@ -408,9 +440,13 @@ function markWord(isKnown) {
   if (isKnown) reviewSession.knownCount++;
   else reviewSession.unknownCount++;
 
-  // Move to next
-  reviewSession.currentIndex++;
-  showCurrentCard();
+  // Record the result of the current card
+  reviewSession.lastResult = isKnown;
+
+  // Show "next" button, keep the answer visible
+  document.getElementById('btn-flip').style.display = 'none';
+  document.getElementById('result-buttons').style.display = 'none';
+  document.getElementById('btn-next').style.display = 'block';
 }
 
 function finishReview() {
@@ -484,13 +520,22 @@ document.addEventListener('keydown', (e) => {
   const reviewSessionEl = document.getElementById('review-session');
   if (reviewSessionEl.style.display === 'none') return;
 
+  const nextBtn = document.getElementById('btn-next');
+  const isMarked = nextBtn.style.display === 'block';
+
   if (e.code === 'Space') {
     e.preventDefault();
-    if (!reviewSession.isFlipped) flipCard();
+    if (!isMarked && !reviewSession.isFlipped) flipCard();
   } else if (e.key === '1') {
-    if (reviewSession.isFlipped) markWord(false);
+    if (!isMarked) markWord(false);
   } else if (e.key === '2') {
-    if (reviewSession.isFlipped) markWord(true);
+    if (!isMarked) markWord(true);
+  } else if (e.key === 'Enter') {
+    if (isMarked) {
+      e.preventDefault();
+      reviewSession.currentIndex++;
+      showCurrentCard();
+    }
   }
 });
 
@@ -532,7 +577,7 @@ function renderWordList() {
       emptyEl.style.display = 'block';
     } else {
       emptyEl.style.display = 'none';
-      listEl.innerHTML = '<p style="text-align:center;color:var(--text-light);padding:32px 0;">未找到匹配的词汇</p>';
+      listEl.innerHTML = '<p style="text-align:center;color:var(--text-light);padding:32px 0;">未找到匹配的词组</p>';
     }
     return;
   }
@@ -717,7 +762,7 @@ document.getElementById('import-file').addEventListener('change', (e) => {
 // Clear all
 document.getElementById('btn-clear-all').addEventListener('click', () => {
   if (!confirm('⚠️ 确认清空所有数据？此操作不可恢复！\n\n建议先导出数据备份。')) return;
-  if (!confirm('再次确认：真的要删除所有词汇和复习记录吗？')) return;
+  if (!confirm('再次确认：真的要删除所有词组和复习记录吗？')) return;
   localStorage.removeItem(STORAGE_KEYS.WORDS);
   localStorage.removeItem(STORAGE_KEYS.REVIEW_QUEUE);
   localStorage.removeItem(STORAGE_KEYS.REVIEW_STATS);

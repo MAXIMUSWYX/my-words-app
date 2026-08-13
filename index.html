@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>词汇复习助手</title>
+  <title>词组复习助手</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -12,10 +12,10 @@
     <header class="header">
       <div class="header-title">
         <span class="logo">📖</span>
-        <h1>词汇复习助手</h1>
+        <h1>词组复习助手</h1>
       </div>
       <nav class="tabs">
-        <button class="tab active" data-tab="add">添加词汇</button>
+        <button class="tab active" data-tab="add">添加词组</button>
         <button class="tab" data-tab="review">复习</button>
         <button class="tab" data-tab="list">词库</button>
         <button class="tab" data-tab="settings">设置</button>
@@ -25,7 +25,7 @@
     <!-- Add Tab -->
     <section class="tab-content active" id="tab-add">
       <div class="card">
-        <h2>📋 添加词汇</h2>
+        <h2>📋 添加词组</h2>
         <p class="hint">每行一个词组，支持以下格式：</p>
         <div class="format-examples">
           <code>word - 单词</code>
@@ -33,8 +33,9 @@
           <code>word = 单词</code>
           <code>word	单词</code>（Tab 分隔）
           <code>take off 起飞</code>（空格分隔，自动识别中英边界）
+          <code>drawback to / of something（某事的缺点）</code>（答案在括号内）
         </div>
-        <textarea id="input-area" placeholder="hello - 你好&#10;world - 世界&#10;take off - 起飞&#10;..." rows="10"></textarea>
+        <textarea id="input-area" placeholder="hello - 你好&#10;world - 世界&#10;take off - 起飞&#10;drawback to / of something（某事的缺点）&#10;..." rows="10"></textarea>
         <div class="button-row">
           <button class="btn btn-secondary" id="btn-preview">解析预览</button>
           <button class="btn btn-primary" id="btn-add">添加到词库</button>
@@ -51,7 +52,7 @@
         <div class="stats-row">
           <div class="stat-item">
             <span class="stat-number" id="stat-total">0</span>
-            <span class="stat-label">总词数</span>
+            <span class="stat-label">总词组数</span>
           </div>
           <div class="stat-item">
             <span class="stat-number" id="stat-today-added">0</span>
@@ -117,12 +118,13 @@
 
         <div class="review-actions" id="review-actions">
           <button class="btn btn-secondary btn-large" id="btn-flip">显示答案</button>
-          <div class="result-buttons" id="result-buttons" style="display:none">
+          <div class="result-buttons" id="result-buttons">
             <button class="btn btn-danger" id="btn-unknown">不认识</button>
             <button class="btn btn-success" id="btn-known">认识</button>
           </div>
+          <button class="btn btn-primary btn-large" id="btn-next" style="display:none">下一题 →</button>
         </div>
-        <p class="shortcut-hint">快捷键：空格 = 翻转卡片 ｜ 1 = 不认识 ｜ 2 = 认识</p>
+        <p class="shortcut-hint">快捷键：空格 = 显示答案 ｜ 1 = 不认识 ｜ 2 = 认识 ｜ Enter = 下一题</p>
       </div>
 
       <!-- Review Complete -->
@@ -157,7 +159,7 @@
         <div class="list-header">
           <h2>📚 词库</h2>
           <div class="list-controls">
-            <input type="text" id="search-input" placeholder="搜索单词..." class="search-input">
+            <input type="text" id="search-input" placeholder="搜索词组..." class="search-input">
             <select id="sort-select" class="sort-select">
               <option value="newest">最新添加</option>
               <option value="oldest">最早添加</option>
@@ -170,7 +172,7 @@
         <div class="word-list" id="word-list"></div>
         <div class="empty-state" id="list-empty">
           <span class="empty-icon">📝</span>
-          <p>词库还是空的，去添加一些词汇吧！</p>
+          <p>词库还是空的，去添加一些词组吧！</p>
         </div>
       </div>
     </section>

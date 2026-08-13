@@ -436,6 +436,15 @@ textarea:focus {
   gap: 12px;
 }
 
+#btn-next {
+  animation: fadeInUp 0.25s ease;
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .result-buttons .btn {
   flex: 1;
   padding: 14px;
