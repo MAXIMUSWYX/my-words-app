@@ -62,6 +62,14 @@ function genId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
+// 词组去重主键：优先用英文（跨设备合并时 id 会重新生成，不可靠）
+function phraseKey(it) {
+  const e = ((it.english || '').trim().toLowerCase());
+  if (e) return 'e:' + e;
+  if (it.id) return 'i:' + it.id;
+  return 'c:' + ((it.chinese || '').trim());
+}
+
 // ===== Toast =====
 function showToast(msg) {
   const toast = document.getElementById('toast');
@@ -252,7 +260,9 @@ function updateStats() {
   const todayAdded = words.filter(w => w.addedDate === today).length;
 
   const stats = loadReviewStats();
-  const todayReviewed = (stats[today] && stats[today].reviewed) || 0;
+  const todayStats = stats[today];
+  const todayItems = (todayStats && todayStats.items) || [];
+  const todayReviewed = todayItems.length > 0 ? todayItems.length : ((todayStats && todayStats.reviewed) || 0);
 
   document.getElementById('stat-total').textContent = words.length;
   document.getElementById('stat-today-added').textContent = todayAdded;
@@ -490,19 +500,25 @@ function finishReview() {
   const stats = loadReviewStats();
   const today = todayKey();
   if (!stats[today]) stats[today] = { reviewed: 0, known: 0, unknown: 0, added: 0, items: [] };
-  stats[today].reviewed += reviewSession.words.length;
-  stats[today].known += reviewSession.knownCount;
-  stats[today].unknown += reviewSession.unknownCount;
-  if (!stats[today].items) stats[today].items = [];
-  // Record each reviewed phrase with its result
+  if (!Array.isArray(stats[today].items)) stats[today].items = [];
+
+  // 记录每个复习的词组，按词组去重（同一天同一词组只算一次）
+  const byEnglish = new Map();
+  stats[today].items.forEach(it => byEnglish.set(phraseKey(it), it));
   reviewSession.words.forEach(w => {
-    stats[today].items.push({
-      id: w.id,
-      english: w.english,
-      chinese: w.chinese,
-      result: w.lastResult || 'unknown',
-    });
+    const key = phraseKey(w);
+    const result = w.lastResult || 'unknown';
+    if (byEnglish.has(key)) {
+      // 同一词组再次复习：结果升级为"认识"
+      if (result === 'known') byEnglish.get(key).result = 'known';
+    } else {
+      byEnglish.set(key, { id: w.id, english: w.english, chinese: w.chinese, result });
+    }
   });
+  stats[today].items = Array.from(byEnglish.values());
+  stats[today].reviewed = stats[today].items.length;
+  stats[today].known = stats[today].items.filter(it => it.result === 'known').length;
+  stats[today].unknown = stats[today].items.filter(it => it.result !== 'known').length;
   saveReviewStats(stats);
 
   // Show completion screen
@@ -688,22 +704,31 @@ function formatDateKey(key) {
 function renderHistory() {
   const stats = loadReviewStats();
   const days = Object.keys(stats).sort().reverse();
+  const allWords = loadWords();
 
-  // Totals: count only days with actual activity (reviewed or added)
-  let activeDays = 0, totalReviewed = 0, totalAdded = 0;
+  // 累计统计
+  // 累计复习词组 = 所有天明细按词组去重后的数量（旧版备份无明细的天退化为数字相加）
+  let activeDays = 0, totalReviewed = 0;
+  const reviewedSet = new Set();
   days.forEach(k => {
     const s = stats[k];
+    const items = s.items || [];
     if ((s.reviewed || 0) > 0 || (s.added || 0) > 0) activeDays++;
-    totalReviewed += s.reviewed || 0;
-    totalAdded += s.added || 0;
+    if (items.length > 0) {
+      items.forEach(it => { const key = phraseKey(it); if (key) reviewedSet.add(key); });
+    } else {
+      totalReviewed += s.reviewed || 0;
+    }
   });
+  totalReviewed += reviewedSet.size;
+  // 累计新增词组 = 词库中的词组总数（词库本身已按英文去重，天然不重复累计）
+  const totalAdded = allWords.length;
 
   document.getElementById('hist-days').textContent = activeDays;
   document.getElementById('hist-reviewed').textContent = totalReviewed;
   document.getElementById('hist-added').textContent = totalAdded;
 
   const listEl = document.getElementById('history-list');
-  const allWords = loadWords();
   if (days.length === 0) {
     listEl.innerHTML = `
       <div class="empty-state">
@@ -715,11 +740,12 @@ function renderHistory() {
 
   listEl.innerHTML = days.map(key => {
     const s = stats[key];
-    const reviewed = s.reviewed || 0;
-    const known = s.known || 0;
-    const unknown = s.unknown || 0;
-    const added = s.added || 0;
     const items = s.items || [];
+    // 有明细的天以去重后明细为准（跨设备合并后同词只算一次）
+    const reviewed = items.length > 0 ? items.length : (s.reviewed || 0);
+    const known = items.length > 0 ? items.filter(it => it.result === 'known').length : (s.known || 0);
+    const unknown = items.length > 0 ? items.filter(it => it.result !== 'known').length : (s.unknown || 0);
+    const added = s.added || 0;
 
     // Only show days with actual activity
     if (reviewed === 0 && added === 0) return '';
@@ -788,10 +814,18 @@ function updateSettingsUI() {
   // Data stats
   const words = loadWords();
   const stats = loadReviewStats();
-  const totalReviews = Object.values(stats).reduce((sum, s) => sum + (s.reviewed || 0), 0);
+  // 累计复习词组：所有明细按词组去重（旧版无明细的天退化为数字）
+  const reviewedSet = new Set();
+  let legacyReviewed = 0;
+  Object.values(stats).forEach(s => {
+    const items = s.items || [];
+    if (items.length > 0) items.forEach(it => { const key = phraseKey(it); if (key) reviewedSet.add(key); });
+    else legacyReviewed += s.reviewed || 0;
+  });
+  const totalReviews = reviewedSet.size + legacyReviewed;
   const dataStatsEl = document.getElementById('data-stats');
   dataStatsEl.innerHTML = `
-    词库：${words.length} 个词组 ｜ 累计复习：${totalReviews} 次 ｜
+    词库：${words.length} 个词组 ｜ 累计复习词组：${totalReviews} 个 ｜
     存储位置：浏览器本地 (localStorage)
   `;
 }
@@ -846,27 +880,41 @@ document.getElementById('btn-import').addEventListener('click', () => {
   document.getElementById('import-file').click();
 });
 
-// Merge daily review stats from another device's backup (same day => numbers add up, items deduped)
+// Merge daily review stats from another device's backup.
+// 关键：按词组（英文）去重 —— 同一词组在两台设备上都复习过，累计只算一次
 function mergeReviewStats(srcStats, dstStats) {
   Object.keys(srcStats || {}).forEach(day => {
     const s = srcStats[day] || {};
     if (!dstStats[day]) dstStats[day] = { reviewed: 0, known: 0, unknown: 0, added: 0, items: [] };
     const d = dstStats[day];
-    d.reviewed = (d.reviewed || 0) + (s.reviewed || 0);
-    d.known = (d.known || 0) + (s.known || 0);
-    d.unknown = (d.unknown || 0) + (s.unknown || 0);
-    d.added = (d.added || 0) + (s.added || 0);
-    if (s.items && s.items.length) {
-      if (!Array.isArray(d.items)) d.items = [];
-      const seen = new Set(d.items.map(it => it.id || `${it.english}|${it.chinese}`));
-      s.items.forEach(it => {
-        const key = it.id || `${it.english}|${it.chinese}`;
-        if (!seen.has(key)) {
-          d.items.push(it);
-          seen.add(key);
-        }
-      });
+
+    // 1) 合并 items，按词组去重；同一词组结果升级为"认识"
+    if (!Array.isArray(d.items)) d.items = [];
+    const byEnglish = new Map();
+    d.items.forEach(it => byEnglish.set(phraseKey(it), it));
+    (s.items || []).forEach(it => {
+      const key = phraseKey(it);
+      if (!byEnglish.has(key)) {
+        byEnglish.set(key, it);
+      } else if (it.result === 'known' && byEnglish.get(key).result !== 'known') {
+        byEnglish.get(key).result = 'known';
+      }
+    });
+    d.items = Array.from(byEnglish.values());
+
+    // 2) 有明细的天：以去重后的明细为准重算统计，避免重复累加
+    if (d.items.length > 0) {
+      d.reviewed = d.items.length;
+      d.known = d.items.filter(it => it.result === 'known').length;
+      d.unknown = d.items.filter(it => it.result !== 'known').length;
+    } else {
+      // 旧版本备份没有明细：只能退化为数字相加
+      d.reviewed = (d.reviewed || 0) + (s.reviewed || 0);
+      d.known = (d.known || 0) + (s.known || 0);
+      d.unknown = (d.unknown || 0) + (s.unknown || 0);
     }
+    // added 字段仅作兼容保留，实际显示以词库（去重后）为准
+    d.added = (d.added || 0) + (s.added || 0);
   });
   return dstStats;
 }
@@ -883,7 +931,7 @@ document.getElementById('import-file').addEventListener('change', (e) => {
         showToast('文件格式不正确');
         return;
       }
-      if (confirm(`将导入 ${data.words.length} 个词组和全部学习记录，是否合并到当前数据？\n（点击"取消"将替换当前全部数据）`)) {
+      if (confirm(`将导入 ${data.words.length} 个词组和全部学习记录，是否合并到当前数据？\n（相同词组和复习记录会自动去重，不会重复累计）\n（点击"取消"将替换当前全部数据）`)) {
         // Merge mode: merge words (dedupe by English, accumulate review counts) + merge review stats
         const existing = loadWords();
         const existingEng = new Set(existing.map(w => w.english.toLowerCase()));
@@ -922,13 +970,21 @@ document.getElementById('import-file').addEventListener('change', (e) => {
         if (data.reviewStats && Object.keys(data.reviewStats).length > 0) {
           const stats = mergeReviewStats(data.reviewStats, loadReviewStats());
           saveReviewStats(stats);
-          mergedReviewed = Object.values(stats).reduce((sum, d) => sum + (d.reviewed || 0), 0);
+          // 累计复习词组：合并后所有明细按词组去重（旧版无明细的天退化为数字）
+          const reviewedSet = new Set();
+          let legacy = 0;
+          Object.values(stats).forEach(d => {
+            const items = d.items || [];
+            if (items.length > 0) items.forEach(it => { const k = phraseKey(it); if (k) reviewedSet.add(k); });
+            else legacy += d.reviewed || 0;
+          });
+          mergedReviewed = reviewedSet.size + legacy;
         } else if (!data.reviewStats) {
           showToast('⚠️ 该备份文件不包含学习记录（可能是旧版本导出的），请用最新版重新导出');
         }
         const msg = [`新增 ${added} 个词组`];
         if (mergedStats > 0) msg.push(`累计 ${mergedStats} 个词的复习次数`);
-        if (data.reviewStats && Object.keys(data.reviewStats).length > 0) msg.push(`学习记录累计复习 ${mergedReviewed} 次`);
+        if (data.reviewStats && Object.keys(data.reviewStats).length > 0) msg.push(`学习记录累计复习词组 ${mergedReviewed} 个`);
         showToast(`合并完成：${msg.join('，')}`);
       } else {
         // Replace mode
@@ -971,8 +1027,42 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+// 校准历史统计：有明细的天一律以去重后的明细为准重算，
+// 自动修复旧版本合并造成的重复累计（如 A10+B10(5 重复) 误记为 20）
+function normalizeStats() {
+  const stats = loadReviewStats();
+  let changed = false;
+  Object.keys(stats).forEach(day => {
+    const d = stats[day];
+    const items = d.items || [];
+    if (!items.length) return;
+    const byEnglish = new Map();
+    items.forEach(it => {
+      const key = phraseKey(it);
+      if (!byEnglish.has(key)) byEnglish.set(key, it);
+      else if (it.result === 'known' && byEnglish.get(key).result !== 'known') byEnglish.get(key).result = 'known';
+    });
+    const deduped = Array.from(byEnglish.values());
+    const newReviewed = deduped.length;
+    const newKnown = deduped.filter(it => it.result === 'known').length;
+    const newUnknown = deduped.filter(it => it.result !== 'known').length;
+    if (deduped.length !== items.length ||
+        newReviewed !== (d.reviewed || 0) ||
+        newKnown !== (d.known || 0) ||
+        newUnknown !== (d.unknown || 0)) {
+      d.items = deduped;
+      d.reviewed = newReviewed;
+      d.known = newKnown;
+      d.unknown = newUnknown;
+      changed = true;
+    }
+  });
+  if (changed) saveReviewStats(stats);
+}
+
 // ===== Init =====
 function init() {
+  normalizeStats(); // 打开页面即校准历史统计（修复旧版本合并的重复累计）
   const settings = loadSettings();
   document.getElementById('review-count').value = settings.defaultCount;
   document.querySelectorAll('[data-order]').forEach(btn => {
