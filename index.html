@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>词组复习助手</title>
-  <link rel="stylesheet" href="styles.css?v=202608180950">
+  <link rel="stylesheet" href="styles.css?v=202608181010">
 </head>
 <body>
   <div class="app">
@@ -88,9 +88,16 @@
               <button class="toggle-btn" data-order="chinese-first">先中文</button>
             </div>
           </div>
+          <div class="config-item">
+            <label>复习范围</label>
+            <div class="toggle-group">
+              <button class="toggle-btn active" data-review-scope="all">全部</button>
+              <button class="toggle-btn" data-review-scope="starred">只看重点</button>
+            </div>
+          </div>
         </div>
         <div class="review-info" id="review-info">
-          <p>词库共有 <strong id="info-total">0</strong> 个词组，今日待复习 <strong id="info-pending">0</strong> 个</p>
+          <p>词库共有 <strong id="info-total">0</strong> 个词组，其中 <strong id="info-pending">0</strong> 个已到期待复习</p>
         </div>
         <button class="btn btn-primary btn-large" id="btn-start-review">开始复习</button>
       </div>
@@ -108,6 +115,7 @@
           <div class="flashcard" id="flashcard">
             <div class="flashcard-inner">
               <div class="flashcard-face flashcard-front" id="card-front">
+                <button class="btn-star-card" id="btn-star-card" title="标为重点">☆</button>
                 <button class="btn-speak" id="btn-speak-card" title="朗读英文">🔊</button>
                 <p class="card-label" id="card-label-front">英文</p>
                 <p class="card-text" id="card-text-front"></p>
@@ -167,12 +175,14 @@
           </div>
           <div class="list-controls">
             <input type="text" id="search-input" placeholder="搜索词组..." class="search-input">
+            <button class="btn-filter-star" id="btn-filter-star" title="只看标星的重点词组">★ 重点</button>
             <select id="sort-select" class="sort-select">
               <option value="newest">最新添加</option>
               <option value="oldest">最早添加</option>
               <option value="english-az">英文 A-Z</option>
               <option value="reviewed-least">复习最少</option>
               <option value="worst-rate">正确率最低</option>
+              <option value="starred-first">重点优先</option>
             </select>
           </div>
         </div>
@@ -257,6 +267,6 @@
   <!-- Toast -->
   <div class="toast" id="toast"></div>
 
-  <script src="app.js?v=202608180950"></script>
+  <script src="app.js?v=202608181010"></script>
 </body>
 </html>

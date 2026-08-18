@@ -70,6 +70,55 @@ function phraseKey(it) {
   return 'c:' + ((it.chinese || '').trim());
 }
 
+// ===== 日期 / 记忆曲线 工具 =====
+// 在 dateKey (YYYY-MM-DD) 基础上加 n 天
+function addDays(dateKey, n) {
+  const d = new Date(dateKey + 'T00:00:00');
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+// 两个 dateKey 相差天数 (b - a)
+function daysBetween(a, b) {
+  const d1 = new Date(a + 'T00:00:00');
+  const d2 = new Date(b + 'T00:00:00');
+  return Math.round((d2 - d1) / 86400000);
+}
+
+// 词组是否到期（dueDate 为空或 <= 今天 视为待复习）
+function isWordDue(w, today) {
+  return !w.dueDate || w.dueDate <= today;
+}
+
+// 记忆曲线（简化 SM-2）：根据"认识/不认识"更新下次复习间隔
+function applySrs(w, isKnown) {
+  if (isKnown) {
+    w.reps = (w.reps || 0) + 1;
+    if (w.reps === 1) w.interval = 1;
+    else if (w.reps === 2) w.interval = 3;
+    else w.interval = Math.max(1, Math.round((w.interval || 1) * (w.ease || 2.5)));
+    w.ease = Math.min(3.0, (w.ease || 2.5) + 0.1);
+  } else {
+    w.reps = 0;
+    w.interval = 1; // 不认识：明天再练
+    w.ease = Math.max(1.3, (w.ease || 2.5) - 0.2);
+  }
+  w.dueDate = addDays(todayKey(), w.interval);
+}
+
+// 列表里展示的复习状态文字
+function srsStatusText(w, today) {
+  if (!w.dueDate || w.dueDate <= today) return '🔔 待复习';
+  const days = daysBetween(today, w.dueDate);
+  if (days === 1) return '📅 明天';
+  if (days <= 30) return `📅 ${days}天后`;
+  return `📅 ${Math.round(days / 30)}个月后`;
+}
+
+// 复习范围与列表筛选状态
+let reviewScope = 'all';      // 'all' | 'starred'
+let starFilterOnly = false;   // 词库列表：只看重点
+
 // ===== TTS (语音朗读) =====
 // 使用浏览器原生 Web Speech API，无需外部服务
 let _enVoice = null;
@@ -244,6 +293,11 @@ document.getElementById('btn-add').addEventListener('click', () => {
       correctCount: 0,
       lastReviewed: null,
       lastResult: null,
+      starred: false,
+      ease: 2.5,
+      interval: 0,
+      dueDate: '',        // 空 = 立即到期，加入即待复习
+      reps: 0,
     });
     added++;
   });
@@ -310,10 +364,12 @@ let reviewSession = {
 
 function updateReviewInfo() {
   const words = loadWords();
-  const reviewCount = parseInt(document.getElementById('review-count').value) || 20;
   document.getElementById('info-total').textContent = words.length;
-  const pending = Math.min(reviewCount, words.length);
-  document.getElementById('info-pending').textContent = pending;
+
+  const today = todayKey();
+  const scopeWords = reviewScope === 'starred' ? words.filter(w => w.starred) : words;
+  const dueCount = scopeWords.filter(w => isWordDue(w, today)).length;
+  document.getElementById('info-pending').textContent = dueCount;
 
   const setupBtn = document.getElementById('btn-start-review');
   if (words.length === 0) {
@@ -322,7 +378,7 @@ function updateReviewInfo() {
     setupBtn.style.opacity = '0.5';
   } else {
     setupBtn.disabled = false;
-    setupBtn.textContent = '开始复习';
+    setupBtn.textContent = reviewScope === 'starred' ? '开始复习（重点词）' : '开始复习';
     setupBtn.style.opacity = '1';
   }
 }
@@ -364,46 +420,73 @@ function getSelectedOrder() {
 }
 
 // Start review
+// 选词策略（优先级从高到低）：
+//   1) 星标词优先
+//   2) 已到期待复习的词优先（记忆曲线）
+//   3) 复习次数少的词优先（薄弱词）
+// 这样"容易忘的重点词"总会先被练到；星标组在前、普通组在后，组内随机打乱保持新鲜感。
+function selectReviewWords(count, onlyStarred) {
+  const words = loadWords();
+  const today = todayKey();
+
+  let pool = words.filter(w => !onlyStarred || w.starred);
+
+  const isDue = w => isWordDue(w, today);
+  const due = pool.filter(isDue);
+  const notDue = pool.filter(w => !isDue(w));
+
+  const sortFn = (a, b) => {
+    if ((a.starred ? 1 : 0) !== (b.starred ? 1 : 0)) return a.starred ? -1 : 1;
+    return (a.reviewCount || 0) - (b.reviewCount || 0);
+  };
+  due.sort(sortFn);
+  notDue.sort(sortFn);
+
+  // 优先选到期的词，不够再用未到期的补
+  let selected = due.slice();
+  if (selected.length < count) {
+    selected = selected.concat(notDue.slice(0, count - selected.length));
+  } else {
+    selected = selected.slice(0, count);
+  }
+
+  // 按 id 去重（保险）
+  const seen = new Set();
+  selected = selected.filter(w => {
+    if (!w.id || seen.has(w.id)) return false;
+    seen.add(w.id);
+    return true;
+  });
+
+  // 两层打乱：星标组在前且组内随机，普通组在后且组内随机
+  // 既保证"重点优先"，又保证每次顺序不固定
+  const starredSel = shuffleArray(selected.filter(w => w.starred));
+  const normalSel = shuffleArray(selected.filter(w => !w.starred));
+  return starredSel.concat(normalSel);
+}
+
 document.getElementById('btn-start-review').addEventListener('click', () => {
   const words = loadWords();
   if (words.length === 0) { showToast('词库为空'); return; }
 
   const count = Math.min(parseInt(document.getElementById('review-count').value) || 20, words.length);
   const order = getSelectedOrder();
+  const onlyStarred = reviewScope === 'starred';
 
-  // 去重：确保每个词只出现一次（防止 queue 历史数据残留导致重复）
-  const seen = new Set();
-  const uniqueWords = words.filter(w => {
-    if (!w.id || seen.has(w.id)) return false;
-    seen.add(w.id);
-    return true;
-  });
-
-  // 按复习次数升序排序（复习次数少的优先），同复习次数的随机排序
-  // 这样每次复习都优先练生词/薄弱词，同分段内每次选的词也不完全一样
-  const sorted = uniqueWords
-    .map(w => ({ w, r: Math.random() }))
-    .sort((a, b) => {
-      const rc = (a.w.reviewCount || 0) - (b.w.reviewCount || 0);
-      if (rc !== 0) return rc;
-      return a.r - b.r;
-    })
-    .map(x => x.w);
-
-  // 取复习次数最少的 count 个词
-  const batch = sorted.slice(0, count);
-
-  // 打乱呈现顺序，确保每次复习的题目顺序都不同
-  const shuffled = shuffleArray(batch);
+  const batch = selectReviewWords(count, onlyStarred);
+  if (batch.length === 0) {
+    showToast(onlyStarred ? '没有标星的重点词组' : '没有可复习的词组');
+    return;
+  }
 
   reviewSession = {
-    words: shuffled,
+    words: batch,
     currentIndex: 0,
     knownCount: 0,
     unknownCount: 0,
     isFlipped: false,
     order: order,
-    queueIds: shuffled.map(w => w.id),
+    queueIds: batch.map(w => w.id),
   };
 
   document.getElementById('review-setup').style.display = 'none';
@@ -459,6 +542,9 @@ function showCurrentCard() {
   document.getElementById('result-buttons').style.display = 'flex';
   document.getElementById('btn-next').style.display = 'none';
 
+  // 同步星标按钮状态
+  updateStarCardButton();
+
   // 自动朗读英文（如设置开启）
   const settings = loadSettings();
   if (settings.autoSpeak) speakEnglish(word.english);
@@ -474,6 +560,31 @@ document.getElementById('btn-speak-card').addEventListener('click', (e) => {
   const word = reviewSession.words[reviewSession.currentIndex];
   if (word) speakEnglish(word.english);
 });
+
+// Star toggle on review card
+document.getElementById('btn-star-card').addEventListener('click', (e) => {
+  e.stopPropagation();
+  const word = reviewSession.words[reviewSession.currentIndex];
+  if (!word) return;
+  const words = loadWords();
+  const idx = words.findIndex(w => w.id === word.id);
+  if (idx >= 0) {
+    words[idx].starred = !words[idx].starred;
+    word.starred = words[idx].starred;
+    saveWords(words);
+    updateStarCardButton();
+    showToast(words[idx].starred ? '已标为重点 ★' : '已取消重点');
+  }
+});
+
+function updateStarCardButton() {
+  const btn = document.getElementById('btn-star-card');
+  if (!btn) return;
+  const word = reviewSession.words[reviewSession.currentIndex];
+  const starred = word && word.starred;
+  btn.textContent = starred ? '★' : '☆';
+  btn.classList.toggle('starred', !!starred);
+}
 
 function flipCard() {
   const flashcard = document.getElementById('flashcard');
@@ -510,10 +621,12 @@ function markWord(isKnown) {
   const words = loadWords();
   const wordIdx = words.findIndex(w => w.id === word.id);
   if (wordIdx >= 0) {
-    words[wordIdx].reviewCount++;
-    words[wordIdx].correctCount += isKnown ? 1 : 0;
-    words[wordIdx].lastReviewed = new Date().toISOString();
-    words[wordIdx].lastResult = isKnown ? 'known' : 'unknown';
+    const w = words[wordIdx];
+    w.reviewCount++;
+    w.correctCount += isKnown ? 1 : 0;
+    w.lastReviewed = new Date().toISOString();
+    w.lastResult = isKnown ? 'known' : 'unknown';
+    applySrs(w, isKnown); // 记忆曲线：更新下次复习间隔
     saveWords(words);
   }
 
@@ -621,6 +734,7 @@ function formatAddedDate(isoString) {
 
 function renderWordList() {
   const words = loadWords();
+  const today = todayKey();
   const search = document.getElementById('search-input').value.toLowerCase().trim();
   const sortBy = document.getElementById('sort-select').value;
 
@@ -631,6 +745,7 @@ function renderWordList() {
       w.chinese.toLowerCase().includes(search)
     );
   }
+  if (starFilterOnly) filtered = filtered.filter(w => w.starred);
 
   // Sort
   filtered.sort((a, b) => {
@@ -643,6 +758,8 @@ function renderWordList() {
         const rateA = a.reviewCount > 0 ? a.correctCount / a.reviewCount : -1;
         const rateB = b.reviewCount > 0 ? b.correctCount / b.reviewCount : -1;
         return rateA - rateB;
+      case 'starred-first':
+        return (b.starred ? 1 : 0) - (a.starred ? 1 : 0) || (a.reviewCount - b.reviewCount);
       default: return 0;
     }
   });
@@ -693,12 +810,14 @@ function renderWordList() {
     const addedDate = w.createdAt ? formatAddedDate(w.createdAt) : '';
 
     return `
-      <div class="word-item" data-id="${w.id}">
+      <div class="word-item ${w.starred ? 'is-starred' : ''}" data-id="${w.id}">
+        <button class="btn-star ${w.starred ? 'starred' : ''}" data-id="${w.id}" title="${w.starred ? '取消重点' : '标为重点'}">${w.starred ? '★' : '☆'}</button>
         <span class="word-eng">${escapeHtml(w.english)}</span>
         <span class="word-arrow">→</span>
         <span class="word-chn">${escapeHtml(w.chinese)}</span>
         <div class="word-stats">${badge}${reviewBadge}</div>
         <button class="btn-speak-sm" data-id="${w.id}" title="朗读">🔊</button>
+        <span class="word-srs ${isWordDue(w, today) ? 'due' : 'later'}">${srsStatusText(w, today)}</span>
         <span class="word-date">${addedDate}</span>
         <button class="btn-delete" data-id="${w.id}" title="删除">✕</button>
       </div>
@@ -722,6 +841,25 @@ function renderWordList() {
       if (w) speakEnglish(w.english);
     });
   });
+
+  // Attach star handlers
+  listEl.querySelectorAll('.btn-star').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleStar(btn.dataset.id);
+    });
+  });
+}
+
+function toggleStar(id) {
+  const words = loadWords();
+  const idx = words.findIndex(w => w.id === id);
+  if (idx >= 0) {
+    words[idx].starred = !words[idx].starred;
+    saveWords(words);
+    renderWordList();
+    showToast(words[idx].starred ? '已标为重点 ★' : '已取消重点');
+  }
 }
 
 function deleteWord(id) {
@@ -741,6 +879,23 @@ function deleteWord(id) {
 
 document.getElementById('search-input').addEventListener('input', renderWordList);
 document.getElementById('sort-select').addEventListener('change', renderWordList);
+
+// 词库：只看重点筛选
+document.getElementById('btn-filter-star').addEventListener('click', () => {
+  starFilterOnly = !starFilterOnly;
+  document.getElementById('btn-filter-star').classList.toggle('active', starFilterOnly);
+  renderWordList();
+});
+
+// 复习范围：全部 / 只看重点
+document.querySelectorAll('[data-review-scope]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('[data-review-scope]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    reviewScope = btn.dataset.reviewScope;
+    updateReviewInfo();
+  });
+});
 
 // ===== History Tab =====
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
@@ -1050,6 +1205,12 @@ document.getElementById('import-file').addEventListener('change', (e) => {
               }
               mergedStats++;
             }
+            // 合并星标与记忆曲线状态（取更"熟练/更远"的一方）
+            if (w.starred) ex.starred = true;
+            if (w.dueDate && (!ex.dueDate || w.dueDate > ex.dueDate)) ex.dueDate = w.dueDate;
+            if ((w.interval || 0) > (ex.interval || 0)) ex.interval = w.interval;
+            if ((w.ease || 0) > (ex.ease || 0)) ex.ease = w.ease;
+            if ((w.reps || 0) > (ex.reps || 0)) ex.reps = w.reps;
           } else {
             existing.push({ ...w, id: genId() });
             existingEng.add(lower);

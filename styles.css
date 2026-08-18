@@ -219,6 +219,28 @@ textarea:focus {
 .btn-speak:hover { background: rgba(255,255,255,0.38); transform: scale(1.1); }
 .btn-speak:active { transform: scale(0.95); }
 
+/* 复习卡片上的星标按钮（左上角） */
+.btn-star-card {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: rgba(255,255,255,0.22);
+  color: #FFD700;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  z-index: 2;
+}
+.btn-star-card:hover { background: rgba(255,255,255,0.38); transform: scale(1.1); }
+.btn-star-card.starred { color: #FFD700; text-shadow: 0 0 6px rgba(255,215,0,0.8); }
+
 .btn-speak-sm {
   width: 26px;
   height: 26px;
@@ -686,6 +708,70 @@ textarea:focus {
 .word-item .btn-delete:hover {
   background: var(--danger-light);
   color: var(--danger);
+}
+
+/* 词库列表：星标按钮 + 重点高亮 */
+.btn-star {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--text-light);
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+.btn-star:hover { background: #FFF7E0; color: var(--warning); transform: scale(1.15); }
+.btn-star.starred { color: var(--warning); }
+
+.word-item.is-starred {
+  background: #FFF8E6;
+  border-left: 3px solid var(--warning);
+}
+.word-item.is-starred:hover { background: #FFF1CC; }
+
+/* 复习状态徽章（记忆曲线） */
+.word-srs {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.word-srs.due {
+  background: var(--danger-light);
+  color: var(--danger);
+  font-weight: 500;
+}
+.word-srs.later {
+  background: var(--success-light);
+  color: var(--success);
+}
+
+/* 词库：只看重点 筛选按钮 */
+.btn-filter-star {
+  padding: 8px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.btn-filter-star:hover { border-color: var(--warning); color: var(--warning); }
+.btn-filter-star.active {
+  background: #FFF1CC;
+  border-color: var(--warning);
+  color: var(--warning);
+  font-weight: 600;
 }
 
 /* ===== Empty State ===== */
