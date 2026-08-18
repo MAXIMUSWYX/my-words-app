@@ -197,6 +197,66 @@ textarea:focus {
 
 .btn-icon:hover { border-color: var(--primary); color: var(--primary); }
 
+/* ===== Speak Buttons ===== */
+.btn-speak {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: rgba(255,255,255,0.22);
+  color: #fff;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  z-index: 2;
+}
+.btn-speak:hover { background: rgba(255,255,255,0.38); transform: scale(1.1); }
+.btn-speak:active { transform: scale(0.95); }
+
+.btn-speak-sm {
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: transparent;
+  color: var(--text-light);
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  flex-shrink: 0;
+  padding: 0;
+  line-height: 1;
+}
+.btn-speak-sm:hover { background: var(--primary-light); color: var(--primary); transform: scale(1.15); }
+.btn-speak-sm:active { transform: scale(0.95); }
+
+/* 语速控制 */
+.rate-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.rate-slider {
+  width: 140px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+.rate-value {
+  font-size: 14px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  min-width: 36px;
+}
+
 /* ===== Preview List ===== */
 .preview-list {
   display: flex;

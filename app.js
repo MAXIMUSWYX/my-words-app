@@ -27,7 +27,7 @@ function saveWords(words) {
 }
 
 function loadSettings() {
-  const defaults = { defaultCount: 20, defaultOrder: 'english-first' };
+  const defaults = { defaultCount: 20, defaultOrder: 'english-first', autoSpeak: true, ttsRate: 0.9 };
   try { return { ...defaults, ...JSON.parse(localStorage.getItem(STORAGE_KEYS.SETTINGS) || '{}') }; }
   catch { return defaults; }
 }
@@ -68,6 +68,35 @@ function phraseKey(it) {
   if (e) return 'e:' + e;
   if (it.id) return 'i:' + it.id;
   return 'c:' + ((it.chinese || '').trim());
+}
+
+// ===== TTS (语音朗读) =====
+// 使用浏览器原生 Web Speech API，无需外部服务
+let _enVoice = null;
+function initVoices() {
+  if (!('speechSynthesis' in window)) return;
+  const voices = speechSynthesis.getVoices();
+  if (!voices.length) return;
+  _enVoice = voices.find(v => v.lang === 'en-US')
+    || voices.find(v => v.lang === 'en-GB')
+    || voices.find(v => v.lang && v.lang.startsWith('en'))
+    || null;
+}
+if ('speechSynthesis' in window) {
+  initVoices();
+  speechSynthesis.onvoiceschanged = initVoices;
+}
+
+function speakEnglish(text) {
+  if (!('speechSynthesis' in window)) { showToast('当前浏览器不支持语音朗读'); return; }
+  if (!text) return;
+  speechSynthesis.cancel(); // 取消上一句，避免排队堆积
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'en-US';
+  if (_enVoice) u.voice = _enVoice;
+  const settings = loadSettings();
+  u.rate = (settings.ttsRate != null) ? settings.ttsRate : 0.9;
+  speechSynthesis.speak(u);
 }
 
 // ===== Toast =====
@@ -429,11 +458,22 @@ function showCurrentCard() {
   document.getElementById('btn-flip').style.display = 'block';
   document.getElementById('result-buttons').style.display = 'flex';
   document.getElementById('btn-next').style.display = 'none';
+
+  // 自动朗读英文（如设置开启）
+  const settings = loadSettings();
+  if (settings.autoSpeak) speakEnglish(word.english);
 }
 
 // Flip card
 document.getElementById('flashcard').addEventListener('click', () => flipCard());
 document.getElementById('btn-flip').addEventListener('click', () => flipCard());
+
+// Speak current card's English
+document.getElementById('btn-speak-card').addEventListener('click', (e) => {
+  e.stopPropagation();
+  const word = reviewSession.words[reviewSession.currentIndex];
+  if (word) speakEnglish(word.english);
+});
 
 function flipCard() {
   const flashcard = document.getElementById('flashcard');
@@ -658,6 +698,7 @@ function renderWordList() {
         <span class="word-arrow">→</span>
         <span class="word-chn">${escapeHtml(w.chinese)}</span>
         <div class="word-stats">${badge}${reviewBadge}</div>
+        <button class="btn-speak-sm" data-id="${w.id}" title="朗读">🔊</button>
         <span class="word-date">${addedDate}</span>
         <button class="btn-delete" data-id="${w.id}" title="删除">✕</button>
       </div>
@@ -670,6 +711,15 @@ function renderWordList() {
       e.stopPropagation();
       const id = btn.dataset.id;
       deleteWord(id);
+    });
+  });
+
+  // Attach speak handlers
+  listEl.querySelectorAll('.btn-speak-sm').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const w = loadWords().find(x => x.id === btn.dataset.id);
+      if (w) speakEnglish(w.english);
     });
   });
 }
@@ -757,7 +807,7 @@ function renderHistory() {
       <div class="hist-section">📝 复习 ${items.length} 个</div>
       ${items.map(it => `
         <div class="hist-item">
-          <span class="hist-item-text">${escapeHtml(it.english)}<span class="hist-item-sep">→</span>${escapeHtml(it.chinese)}</span>
+          <span class="hist-item-text"><button class="btn-speak-sm" data-eng="${escapeHtml(it.english)}" title="朗读">🔊</button>${escapeHtml(it.english)}<span class="hist-item-sep">→</span>${escapeHtml(it.chinese)}</span>
           <span class="hist-item-badge ${it.result === 'known' ? 'badge-known' : 'badge-unknown'}">${it.result === 'known' ? '认识' : '不认识'}</span>
         </div>`).join('')}` : '';
 
@@ -765,7 +815,7 @@ function renderHistory() {
       <div class="hist-section">📥 当天新增 ${addedItems.length} 个</div>
       ${addedItems.map(w => `
         <div class="hist-item">
-          <span class="hist-item-text">${escapeHtml(w.english)}<span class="hist-item-sep">→</span>${escapeHtml(w.chinese)}</span>
+          <span class="hist-item-text"><button class="btn-speak-sm" data-eng="${escapeHtml(w.english)}" title="朗读">🔊</button>${escapeHtml(w.english)}<span class="hist-item-sep">→</span>${escapeHtml(w.chinese)}</span>
           <span class="hist-item-badge badge-added">新增</span>
         </div>`).join('')}` : '';
 
@@ -801,6 +851,14 @@ function renderHistory() {
       btn.textContent = expanded ? '▾' : '▴';
     });
   });
+
+  // Speak handlers in history details
+  listEl.querySelectorAll('.btn-speak-sm').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      speakEnglish(btn.dataset.eng);
+    });
+  });
 }
 
 // ===== Settings Tab =====
@@ -810,6 +868,19 @@ function updateSettingsUI() {
   document.querySelectorAll('[data-setting-order]').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.settingOrder === settings.defaultOrder);
   });
+
+  // 自动朗读开关
+  document.querySelectorAll('[data-setting-autospeak]').forEach(btn => {
+    btn.classList.toggle('active', (settings.autoSpeak !== false ? 'on' : 'off') === btn.dataset.settingAutospeak);
+  });
+  // 朗读语速
+  const rate = (settings.ttsRate != null) ? settings.ttsRate : 0.9;
+  const rateSlider = document.getElementById('setting-tts-rate');
+  if (rateSlider) {
+    rateSlider.value = rate;
+    const rateValEl = document.getElementById('rate-value');
+    if (rateValEl) rateValEl.textContent = rate.toFixed(1) + '×';
+  }
 
   // Data stats
   const words = loadWords();
@@ -854,6 +925,34 @@ document.querySelectorAll('[data-setting-order]').forEach(btn => {
     showToast('已保存设置');
   });
 });
+
+// 自动朗读开关
+document.querySelectorAll('[data-setting-autospeak]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('[data-setting-autospeak]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const settings = loadSettings();
+    settings.autoSpeak = btn.dataset.settingAutospeak === 'on';
+    saveSettings(settings);
+    showToast(settings.autoSpeak ? '已开启自动朗读' : '已关闭自动朗读');
+  });
+});
+
+// 朗读语速调节（拖动时实时显示数值，松手时保存并试听）
+const _rateSlider = document.getElementById('setting-tts-rate');
+if (_rateSlider) {
+  _rateSlider.addEventListener('input', () => {
+    const v = parseFloat(_rateSlider.value).toFixed(1) + '×';
+    const el = document.getElementById('rate-value');
+    if (el) el.textContent = v;
+  });
+  _rateSlider.addEventListener('change', () => {
+    const settings = loadSettings();
+    settings.ttsRate = parseFloat(_rateSlider.value);
+    saveSettings(settings);
+    speakEnglish('Hello, this is a sample.'); // 试听效果
+  });
+}
 
 // Export
 document.getElementById('btn-export').addEventListener('click', () => {

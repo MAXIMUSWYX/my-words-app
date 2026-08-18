@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>词组复习助手</title>
-  <link rel="stylesheet" href="styles.css?v=202608131855">
+  <link rel="stylesheet" href="styles.css?v=202608180950">
 </head>
 <body>
   <div class="app">
@@ -108,6 +108,7 @@
           <div class="flashcard" id="flashcard">
             <div class="flashcard-inner">
               <div class="flashcard-face flashcard-front" id="card-front">
+                <button class="btn-speak" id="btn-speak-card" title="朗读英文">🔊</button>
                 <p class="card-label" id="card-label-front">英文</p>
                 <p class="card-text" id="card-text-front"></p>
               </div>
@@ -224,6 +225,20 @@
             <button class="toggle-btn" data-setting-order="chinese-first">先中文</button>
           </div>
         </div>
+        <div class="setting-item">
+          <div class="setting-label">复习时自动朗读英文</div>
+          <div class="toggle-group">
+            <button class="toggle-btn active" data-setting-autospeak="on">开启</button>
+            <button class="toggle-btn" data-setting-autospeak="off">关闭</button>
+          </div>
+        </div>
+        <div class="setting-item">
+          <div class="setting-label">朗读语速</div>
+          <div class="rate-control">
+            <input type="range" id="setting-tts-rate" min="0.5" max="1.5" step="0.1" value="0.9" class="rate-slider">
+            <span class="rate-value" id="rate-value">0.9×</span>
+          </div>
+        </div>
       </div>
 
       <div class="card">
@@ -242,6 +257,6 @@
   <!-- Toast -->
   <div class="toast" id="toast"></div>
 
-  <script src="app.js?v=202608132020"></script>
+  <script src="app.js?v=202608180950"></script>
 </body>
 </html>
